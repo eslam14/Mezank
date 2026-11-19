@@ -256,7 +256,7 @@ class MiniSB{
   async _json(path,opt,authed){
     const h={apikey:this.key,...(opt.headers||{})};
     if(authed){const t=await this._tok();if(t)h.Authorization='Bearer '+t}
-    let r;try{r=await fetch(this.url+path,{...opt,headers:h})}catch(e){return{data:null,error:new Error('تعذّر الاتصال بالخادم، تأكد من الإنترنت ومن رابط المشروع')}}
+    let r;try{r=await fetch(this.url+path,{...opt,headers:h})}catch(e){return{data:null,error:new Error('تعذّر الاتصال بالخادم ('+this.url+'). اضغط «إعدادات الاتصال» ثم «اختبار الاتصال». ['+(e.message||e)+']')}}
     const txt=await r.text();let j=null;try{j=txt?JSON.parse(txt):null}catch(e){}
     if(!r.ok){const m=j&&(j.message||j.msg||j.error_description||j.error)||r.statusText||'خطأ';return{data:null,error:Object.assign(new Error(m),{code:j&&(j.code||j.error_code),status:r.status})}}
     return{data:j,error:null};
@@ -283,9 +283,21 @@ function showCloudSetup(){
   showAuth(`<p class="mute">بيانات مشروع Supabase (Project URL و anon key)</p>
   <label>Project URL</label><input id="cu" dir="ltr" placeholder="https://xxxx.supabase.co" value="${esc(c.url)}">
   <label>anon public key</label><input id="ck" dir="ltr" value="${esc(c.key)}">
+  <div id="ct" class="mute" style="font-size:13px;margin-top:8px;line-height:1.6"></div>
+  <button class="btn alt" onclick="testCloud()">اختبار الاتصال</button>
   <button class="btn" onclick="saveCloud()">حفظ ومتابعة</button>
   <button class="btn alt" onclick="showWelcome()">رجوع</button>`)}
-function saveCloud(){const url=$('cu').value.trim(),key=$('ck').value.trim();if(!url||!key)return;localStorage.setItem('mz_cloud',JSON.stringify({url,key}));localStorage.setItem('mz_mode','cloud');boot()}
+function normUrl(u){u=String(u||'').trim().replace(/\s+/g,'');if(u&&!/^https?:\/\//i.test(u))u='https://'+u;try{return new URL(u).origin}catch(e){return u.replace(/\/+$/,'')}}
+async function testCloud(){
+  const url=normUrl($('cu').value),key=$('ck').value.trim().replace(/\s+/g,''),o=$('ct');o.style.color='var(--mute)';o.textContent='جارٍ الاختبار...';
+  if(!url||!key){o.style.color='var(--bad)';o.textContent='اكتب الرابط والمفتاح';return}
+  try{
+    const r=await fetch(url+'/auth/v1/settings',{headers:{apikey:key}}),t=await r.text();
+    if(r.ok){o.style.color='var(--ok)';o.textContent='✅ الاتصال شغال. المشروع ردّ بنجاح'}
+    else{o.style.color='var(--bad)';o.textContent='❌ المشروع ردّ بخطأ '+r.status+': '+t.slice(0,160)}
+  }catch(e){o.style.color='var(--bad)';o.textContent='❌ تعذّر الوصول إلى '+url+' — راجع الرابط (حرف غلط؟)، أو إن المشروع متوقف (Paused) في Supabase، أو جرّب المتصفح Chrome/Safari، أو جرّب بيانات الموبايل بدل الواي فاي. ('+(e.message||e)+')'}
+}
+function saveCloud(){const url=normUrl($('cu').value),key=$('ck').value.trim().replace(/\s+/g,'');if(!url||!key)return;localStorage.setItem('mz_cloud',JSON.stringify({url,key}));localStorage.setItem('mz_mode','cloud');boot()}
 
 async function boot(){
   const mode=localStorage.getItem('mz_mode');
@@ -475,9 +487,9 @@ function waPay(pid){
 function newWeigh(){S.draft=null;S.editId=null;S.rec=null;go('new')}
 
 /* ====== وزنة جديدة ====== */
-function freshDraft(){return{kind:'in',plate:'',driver:'',party_id:'',material_id:'',price:'',price_unit:'ton',gross:'',tare:'',empties_count:'',empties_unit:S.set.empty_unit_kg||'',grade_idx:'',note:'',receiver:'',photos:[]}}
+function freshDraft(){return{loc:curLocId(),kind:'in',plate:'',driver:'',party_id:'',material_id:'',price:'',price_unit:'ton',gross:'',tare:'',empties_count:'',empties_unit:S.set.empty_unit_kg||'',grade_idx:'',note:'',receiver:'',photos:[]}}
 function gradeIdx(name){const i=S.set.grades.findIndex(g=>g.name===name);return i<0?'':String(i)}
-function draftFromRec(r){return{kind:r.kind,plate:r.plate,driver:r.driver||'',party_id:r.party_id||'',material_id:r.material_id||'',price:r.price_per_ton||'',price_unit:r.price_unit||'ton',gross:r.gross??'',tare:r.tare??'',empties_count:r.empties_count||'',empties_unit:r.empties_unit_kg||'',grade_idx:gradeIdx(r.grade_name),note:r.note||'',receiver:r.receiver||'',photos:[...(r.photos||[])]}}
+function draftFromRec(r){return{loc:r.location_id||'',kind:r.kind,plate:r.plate,driver:r.driver||'',party_id:r.party_id||'',material_id:r.material_id||'',price:r.price_per_ton||'',price_unit:r.price_unit||'ton',gross:r.gross??'',tare:r.tare??'',empties_count:r.empties_count||'',empties_unit:r.empties_unit_kg||'',grade_idx:gradeIdx(r.grade_name),note:r.note||'',receiver:r.receiver||'',photos:[...(r.photos||[])]}}
 function locked(f){return S.editId&&S.rec&&S.rec[f]!=null&&!can.admin()}
 function D(k,v){S.draft[k]=v}
 const partyFits=(p,k,cur)=>p.id===cur||(k==='in'?p.kind==='supplier':p.kind==='customer');
@@ -515,6 +527,7 @@ function vNew(){
   return `${S.editId?`<div class="banner"><span>${S.rec&&S.rec.status==='done'?'تعديل فاتورة':'إتمام فاتورة مفتوحة'}: <b>${esc(d.plate)}</b></span><button class="btn2" onclick="cancelEdit()">إلغاء</button></div>`:''}
   <div class="card">
     <div class="seg"><button id="k-in" class="${d.kind==='in'?'on':''}" onclick="setKind('in')">وارد (استلام)</button><button id="k-out" class="${d.kind==='out'?'on':''}" onclick="setKind('out')">صادر (تسليم)</button></div>
+    ${locsOn()?`<label>الموقع</label><select id="f-loc" onchange="onLoc(this.value)" ${S.rec&&S.rec.status==='done'?'disabled':''}><option value="">— اختر الموقع —</option>${locs().map(l=>`<option value="${l.id}" ${l.id===d.loc?'selected':''}>${esc(l.name)}</option>`).join('')}</select>`:''}
     <label>رقم الشاحنة</label>
     <input id="f-plate" list="dl-plates" value="${esc(d.plate)}" ${S.editId?'disabled':''} oninput="D('plate',this.value);if(S.w.some(r=>r.plate===this.value.trim()))plateChosen(this.value)" onchange="plateChosen(this.value)" placeholder="مثال: ص ن ع 1234">
     <datalist id="dl-plates">${plates.map(p=>`<option value="${esc(p)}">`).join('')}</datalist>
@@ -551,8 +564,8 @@ function calc(){
 function stockNote(c){
   const el=$('stk'),d=S.draft;if(!el||!d)return;
   if(!d.material_id){el.innerHTML='';return}
-  const bal=stockBal(d.material_id,devLoc(),S.rec&&S.rec.id),after=d.kind==='out'?bal-(c&&c.has?c.payable:0):bal+(c&&c.has?c.payable:0);
-  const cid=d.kind==='in'?locCustOf(devLoc()):null,cp=cid?S.parties.find(x=>x.id===cid):null,mm=S.materials.find(x=>x.id===d.material_id),sq=mm?matPrices(mm):null;
+  const bal=stockBal(d.material_id,dLoc(),S.rec&&S.rec.id),after=d.kind==='out'?bal-(c&&c.has?c.payable:0):bal+(c&&c.has?c.payable:0);
+  const cid=d.kind==='in'?locCustOf(dLoc()):null,cp=cid?S.parties.find(x=>x.id===cid):null,mm=S.materials.find(x=>x.id===d.material_id),sq=mm?matPrices(mm):null;
   const hint=cp?`<br>هيتسجل على حساب العميل <b>${esc(cp.name)}</b> بسعر بيع ${fmt(+sq.sp||0,2)} ج.م / ${unitName(sq.su)}${c&&c.has?' • القيمة: <b>'+fmt(sq.su==='ardeb'?c.payable/ARDEB*(+sq.sp||0):c.payable/1000*(+sq.sp||0),2)+' ج.م</b>':''}`:'';
   el.innerHTML=`<div class="mute" style="margin-top:8px;font-size:13px">رصيد المخزون من هذا الصنف: <b>${fmt(bal,1)} كجم</b>${c&&c.has?` • بعد هذه الوزنة: <b style="${after<0?'color:#c0392b':''}">${fmt(after,1)} كجم</b>`:''}${hint}</div>`;
 }
@@ -589,7 +602,7 @@ function rmPhoto(i){S.draft.photos.splice(i,1);renderThumbs()}
 function weighWarnings(d,c){
   const w=[],plate=d.plate.trim(),cur=S.rec&&S.rec.id,prior=S.w.filter(r=>r.plate===plate&&r.status==='done'&&r.id!==cur);
   if(c.has&&prior.some(r=>Date.now()-new Date(r.created_at)<30*60000))w.push('الشاحنة دي اتوزنت من أقل من 30 دقيقة');
-  if(d.kind==='out'&&c.has&&d.material_id){const bal=stockBal(d.material_id,devLoc(),cur);if(c.payable>bal+0.001)w.push('الكمية المصروفة ('+fmt(c.payable,1)+' كجم) أكبر من رصيد المخزون المتاح ('+fmt(bal,1)+' كجم)')}
+  if(d.kind==='out'&&c.has&&d.material_id){const bal=stockBal(d.material_id,dLoc(),cur);if(c.payable>bal+0.001)w.push('الكمية المصروفة ('+fmt(c.payable,1)+' كجم) أكبر من رصيد المخزون المتاح ('+fmt(bal,1)+' كجم)')}
   const lt=prior.find(r=>r.tare!=null);
   if(d.tare!==''&&lt&&lt.tare>0){const df=Math.abs(num(d.tare)-lt.tare)/lt.tare*100;if(df>10)w.push('الوزن الفارغ مختلف '+fmt(df,0)+'% عن آخر مرة ('+fmt(lt.tare)+' كجم)')}
   return w;
@@ -598,7 +611,8 @@ async function saveWeigh(pp){
   if(busy)return;const d=S.draft;
   if(!d.plate.trim())return toast('⚠️ اكتب رقم الشاحنة',1);
   if(d.gross===''&&d.tare==='')return toast('⚠️ أدخل وزنة واحدة على الأقل',1);
-  {const o0=S.rec;if(o0&&o0.locked)return toast('⚠️ الفاتورة معتمدة ومقفولة',1);const ld=(o0&&o0.status==='done')?dayKey(o0.created_at):dayKey(new Date());if(isLocked(ld,(o0&&o0.status==='done')?(o0.location_id||''):undefined))return toast('⚠️ '+LOCKMSG,1)}
+  if(locsOn()&&!d.loc)return toast('⚠️ اختر الموقع',1);
+  {const o0=S.rec;if(o0&&o0.locked)return toast('⚠️ الفاتورة معتمدة ومقفولة',1);const ld=(o0&&o0.status==='done')?dayKey(o0.created_at):dayKey(new Date());if(isLocked(ld,(o0&&o0.status==='done')?(o0.location_id||''):(d.loc||'')))return toast('⚠️ '+LOCKMSG,1)}
   const c=compute(d);
   if(c.has&&num(d.gross)<=num(d.tare)&&!confirm('الوزن القائم أقل من أو يساوي الفارغ. متأكد؟'))return;
   {const w=weighWarnings(d,c);if(w.length&&!confirm('⚠️ تنبيهات قبل الحفظ:\n- '+w.join('\n- ')+'\n\nمتابعة الحفظ؟'))return}
@@ -608,7 +622,7 @@ async function saveWeigh(pp){
     const photos=[];for(const p of d.photos)photos.push({step:p.step,ref:String(p.ref).startsWith('data:')?await DB.photo(p.ref):p.ref});
     const now=new Date().toISOString(),old=S.rec;
     const party=S.parties.find(x=>x.id===d.party_id),mat=S.materials.find(x=>x.id===d.material_id),gr=d.grade_idx===''?null:S.set.grades[+d.grade_idx];
-    const r={...(old||{id:uid(),created_at:now,created_by:S.user.id,created_by_name:S.user.name,paid:false,...locTag(),...(locsOn()&&curLocId()?{loc_seq:nextLocSeq()}:{})}),
+    const r={...(old||{id:uid(),created_at:now,created_by:S.user.id,created_by_name:S.user.name,paid:false,...locTag(d.loc),...(locsOn()&&d.loc?{loc_seq:nextLocSeq(d.loc)}:{})}),
       kind:d.kind,status:c.has?'done':'open',plate:d.plate.trim(),driver:d.driver.trim(),
       party_id:party?party.id:null,party_name:party?party.name:null,material_id:mat?mat.id:null,material_name:mat?mat.name:null,
       gross:d.gross===''?null:num(d.gross),tare:d.tare===''?null:num(d.tare),
@@ -616,6 +630,7 @@ async function saveWeigh(pp){
       net:c.has?c.net:null,empties_count:num(d.empties_count),empties_unit_kg:num(d.empties_unit),empties_deduction:c.emp,
       grade_name:gr?gr.name:null,grade_pct:c.pct,grade_deduction:c.gd,payable:c.has?c.payable:null,
       price_per_ton:c.price,price_unit:d.price_unit,total:c.has?c.total:null,note:d.note.trim(),receiver:d.kind==='out'?(d.receiver||'').trim():'',photos};
+    if(old&&old.status==='open'&&locsOn()&&(d.loc||'')!==(old.location_id||'')){Object.assign(r,locTag(d.loc));r.loc_seq=d.loc?nextLocSeq(d.loc):null}
     if(d.kind==='in'&&mat&&r.cust_price==null&&locCustOf(r.location_id)){const q=matPrices(mat);r.cust_price=+q.sp||0;r.cust_unit=q.su}
     const sv=await DB.put('weighings',r);if(sv&&sv.seq!=null)r.seq=sv.seq;
     audit(old?'update':'create','weighing',ticketNo(r),old?(old.status==='open'&&r.status==='done'?'إتمام الوزنة الثانية • صافي '+fmt(r.payable,1)+' كجم':'تعديل: '+(diffTxt(old,r)||'بدون تغيير جوهري')):r.plate+' • '+(r.kind==='in'?'وارد':'صادر'));
@@ -871,9 +886,11 @@ const locsOn=()=>locs().length>0;
 const curLocId=()=>{try{const v=localStorage.getItem('mz_loc')||'';return locs().some(l=>l.id===v)?v:''}catch(e){return ''}};
 const locParty=()=>{const l=locs().find(x=>x.id===curLocId());return l&&l.party_id?S.parties.find(p=>p.id===l.party_id)||null:null};
 const locCode=id=>{const l=locs().find(x=>x.id===id);return l&&l.code?String(l.code):''};
-const nextLocSeq=()=>{const id=curLocId();if(!id)return null;let m=0;try{m=+localStorage.getItem('mz_ls_'+id)||0}catch(e){}S.w.forEach(r=>{if(r.location_id===id&&r.loc_seq>m)m=r.loc_seq});m++;try{localStorage.setItem('mz_ls_'+id,m)}catch(e){}return m};
+const nextLocSeq=(id0)=>{const id=id0===undefined?curLocId():id0;if(!id)return null;let m=0;try{m=+localStorage.getItem('mz_ls_'+id)||0}catch(e){}S.w.forEach(r=>{if(r.location_id===id&&r.loc_seq>m)m=r.loc_seq});m++;try{localStorage.setItem('mz_ls_'+id,m)}catch(e){}return m};
 const locName=id=>{const l=locs().find(x=>x.id===id);return l?l.name:''};
-const locTag=()=>locsOn()?{location_id:curLocId()||null,location_name:locName(curLocId())||null}:{};
+const locTag=(id)=>{if(!locsOn())return{};if(id===undefined)id=curLocId();return{location_id:id||null,location_name:locName(id)||null}};
+const dLoc=()=>locsOn()?((S.draft&&S.draft.loc!==undefined)?S.draft.loc:curLocId()):'';
+function onLoc(v){D('loc',v);calc()}
 const lockKey=(d,l)=>l?l+'@'+d:d;
 const effLoc=()=>locsOn()?(can.admin()?(S.tf.loc||''):curLocId()):'';
 const repLoc=()=>locsOn()?(can.admin()?(S.rf.loc||''):curLocId()):'';
